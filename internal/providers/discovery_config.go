@@ -15,7 +15,7 @@ package providers
 type DiscoveryConfig struct {
 
 	//Paths are explicit location overrides supplied by the user (for example:
-	//via `--path``). When empty, a provider should fall back to its own
+	//via `--path`). When empty, a provider should fall back to its own
 	//defaults (for example: AWS defaulting to ~/.aws/credentials)
 	Paths []string
 
