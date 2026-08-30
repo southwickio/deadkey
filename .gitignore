@@ -2,3 +2,10 @@
 *.db
 .deadkey/
 .vscode/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+.env
+*.log
