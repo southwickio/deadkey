@@ -118,13 +118,84 @@ including OS keyrings and Git Credential Manager).
 
 ## Stripe
 
-Status: not yet researched in depth.
+### deadkey usage
 
-Known so far: no per-key last-used field exists. A real Activity Logs API
-exists (6-month retention, ~10 minute delay after events occur) that
-includes API-key-related events (key creation, role changes, access from
-unfamiliar actors) - this is a real, inferable activity signal via
-log-searching, not a direct field. Needs a full research pass before design.
+- `deadkey scan --provider stripe` - scan for Stripe credentials only
+- `deadkey scan --path ~/custom/config.toml` - override the default Stripe
+  CLI config file location
+- `deadkey add` -> select "Stripe" -> manually register a credential
+- `deadkey ignore <location>` -> stop flagging a specific credential slot
+
+Discovery checks two locations automatically: known env var names
+(STRIPE_API_KEY, STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY,
+STRIPE_WEBHOOK_SECRET, STRIPE_CONNECT_CLIENT_ID) and
+~/.config/stripe/config.toml (the Stripe CLI's own config file, scanning
+every named project section, not just the default).
+
+Stripe has five distinct credential types, each identified by prefix and
+tracked as a distinct subtype: secret keys (sk_), restricted keys (rk_),
+publishable keys (pk_), organization keys (sk_org_), webhook secrets
+(whsec_), and Connect client IDs (ca_). Each splits live/test mode except
+webhook secrets and Connect client IDs.
+
+### What deadkey checks, and what each needs
+
+| Check | Required permission | Notes |
+|---|---|---|
+| Discovery | none | reads local files/env vars, no API call |
+| Basic validation (secret/restricted/organization keys) | none beyond holding the key | GET /v1/balance, confirmed to work with any authenticated key. Uses HTTP Basic Auth (key as username, empty password), not a Bearer token |
+| Basic validation (publishable keys) | none beyond holding the key | POST /v1/tokens (create a minimal account token). Confirmed real and documented. Unlike every other validation call in this project, this has a real side effect - it creates a short-lived, inert token object in the account |
+| Basic validation (webhook secrets, Connect client IDs) | not applicable | no confirmed API exists to check liveness for these two subtypes - see Known Limitations |
+| Live-mode risk flag | none | derived from the credential's own value (_live_ substring), no API call |
+| Unrestricted-key risk flag | none | derived from the credential's own prefix, no API call |
+| Organization-key risk flag | none | derived from the credential's own prefix, no API call |
+| Team-account status risk flag (optional) | Enterprise plan with SSO + SCIM provisioning enabled | see Known Limitations for exact scope |
+
+### Provider-side setup
+
+- No setup is required beyond having a credential. All checks that are
+  possible at all work with zero additional permissions or configuration.
+- To create a restricted key with scoped permissions instead of a full
+  secret key: https://docs.stripe.com/keys/restricted-api-keys
+- To manage team members and (on Enterprise plans with SSO) provision
+  access via SCIM: https://docs.stripe.com/get-started/account/orgs/team
+  and https://docs.stripe.com/get-started/account/sso/scim
+- To enable deadkey's optional SCIM-based team-account check, set
+  DEADKEY_STRIPE_SCIM_BEARER_TOKEN to a SCIM bearer token generated in
+  Stripe's Team and security settings.
+
+### Known limitations
+
+- No last-used/activity data exists for any Stripe credential type.
+  Confirmed: Stripe's Activity Logs API
+  (https://docs.stripe.com/activity-logs) tracks key management events
+  (api_key_created, api_key_deleted, api_key_updated, api_key_viewed), not
+  key usage events. There is no API-based signal, direct or inferred, for
+  when a credential was last used to make a request. This is a structural
+  limitation of Stripe's API, not a gap in deadkey.
+- Webhook secrets and Connect client IDs cannot be validated as alive/dead
+  via any confirmed API call. A webhook secret is never sent to Stripe at
+  all (it's a local HMAC signing key); a Connect client ID is a public
+  identifier with no per-ID check. deadkey still discovers and tracks
+  both (by design, per project scope), but Validate() reports this
+  limitation explicitly rather than guessing a verdict. Publishable keys,
+  by contrast, DO have a real validation path (POST /v1/tokens) - this was
+  initially assumed impossible based on publishable keys' general
+  client-side framing, then corrected after finding this endpoint's
+  documented auth requirements directly.
+- No confirmed API exposes what specific permissions a restricted key
+  (rk_) was granted at creation - this is visible only in the Stripe
+  Dashboard UI. deadkey can identify that a key IS restricted, but not
+  grade how narrowly.
+- Team member listing and active/inactive status are accessible via SCIM
+  (a real, implemented optional check - see scim.go), but only for
+  accounts on an Enterprise plan with SSO and SCIM provisioning enabled.
+  Set DEADKEY_STRIPE_SCIM_BEARER_TOKEN to enable; gracefully returns no
+  signal if unset or if the call fails. Note: this checks account
+  active/inactive status only - standard SCIM's core schema does not
+  define a 2FA/MFA field, and no confirmed Stripe API exposes 2FA status
+  at all. This is a narrower, different check than AWS's "no MFA enrolled"
+  modifier, not a direct equivalent.
 
 ---
 
