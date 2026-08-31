@@ -43,11 +43,10 @@ const (
 func (p *Provider) Validate(ctx context.Context, 
 	cred models.Credential) (models.ValidationResult, error) {
 
-	token, ok := cred.Metadata[metaToken]
-	if !ok || token == "" {
+	token, err := resolveGitHubToken(ctx, cred)
+	if err != nil {
 
-		return models.ValidationResult{},
-		fmt.Errorf("credential missing %s in Metadata", metaToken)
+		return models.ValidationResult{}, err
 
 	}
 

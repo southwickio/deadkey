@@ -45,11 +45,10 @@ import (
 func (p *Provider) Validate(ctx context.Context, 
 	cred models.Credential) (models.ValidationResult, error) {
 
-	value, ok := cred.Metadata[metaValue]
-	if !ok || value == "" {
+	value, err := resolveStripeValue(ctx, cred)
+	if err != nil {
 
-		return models.ValidationResult{}, 
-		fmt.Errorf("credential missing %s in Metadata", metaValue)
+		return models.ValidationResult{}, err
 
 	}
 

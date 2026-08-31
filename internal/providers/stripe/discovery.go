@@ -2,10 +2,9 @@ package stripe
 
 import (
 
-	"bufio"  //reads the config file line by line
 	"context"  //carries cancellation/deadline signals through function calls
 	"fmt"  //string formatting and building error messages
-	"os"  //reading env vars, opening files, finding the home directory
+	"os"  //reading env vars, finding the home directory
 	"path/filepath"  //building file paths correctly across operating systems
 	"strings"  //string manipulation (prefix checks, splitting, trimming)
 
@@ -20,12 +19,23 @@ import (
 //sufficient. No API call needed
 const (
 
-	subtypeSecretKey models.CredentialSubtype = "secret_key"  //sk_ - full account access
-	subtypeRestrictedKey models.CredentialSubtype = "restricted_key"  //rk_ - scoped permissions, chosen at creation
-	subtypePublishableKey models.CredentialSubtype = "publishable_key"  //pk_ - not a secret, safe client-side
-	subtypeOrganizationKey models.CredentialSubtype = "organization_key"  //sk_org_ - spans multiple Stripe accounts
-	subtypeWebhookSecret models.CredentialSubtype = "webhook_secret"  //whsec_ - HMAC signing key, not an API credential
-	subtypeConnectClientID models.CredentialSubtype = "connect_client_id"  //ca_ - public identifier for a Connect OAuth app, not a secret
+	//sk_ - full account access
+	subtypeSecretKey models.CredentialSubtype = "secret_key"
+	
+	//rk_ - scoped permissions, chosen at creation
+	subtypeRestrictedKey models.CredentialSubtype = "restricted_key"
+	
+	//pk_ - not a secret, safe client-side
+	subtypePublishableKey models.CredentialSubtype = "publishable_key"
+	
+	//sk_org_ - spans multiple Stripe accounts
+	subtypeOrganizationKey models.CredentialSubtype = "organization_key"
+	
+	//whsec_ - HMAC signing key, not an API credential
+	subtypeWebhookSecret models.CredentialSubtype = "webhook_secret"
+	
+	//ca_ - public identifier for a Connect OAuth app, not a secret
+	subtypeConnectClientID models.CredentialSubtype = "connect_client_id"
 
 )
 
@@ -66,9 +76,29 @@ func isLiveMode(value string) bool {
 }
 
 //Metadata keys this provider writes onto Credential.Metadata
+//
+//The raw credential value is NEVER written here. Metadata lives on Credential,
+//which is embedded in CredentialAssessment, which is what gets written to local
+//SQLite and used as the basis for cloud sync. Only non-sensitive pointers back
+//to where the value lives are stored. secret.go re-fetches the actual value
+//fresh, from its original source, every time Validate/GetActivity/RiskModifiers
+//need it
 const (
 
-	metaValue = "stripe_value"  //the credential's own string; see validate.go for why this is safe to keep here
+  	//"env" or "config_toml"
+	metaSourceMethod = "stripe_source_method"
+
+    //which env var, when metaSourceMethod is "env"
+	metaSourceEnvVar = "stripe_source_env_var"
+
+    //config.toml path, when metaSourceMethod is "config_toml"
+	metaSourceFilePath = "stripe_source_file_path"
+
+    //config.toml [section], when metaSourceMethod is "config_toml"
+	metaSourceSection = "stripe_source_section"
+
+    //config.toml key within the section, when metaSourceMethod is "config_toml"
+	metaSourceKey = "stripe_source_key"
 
 )
 
@@ -85,6 +115,11 @@ const (
 //     project section is scanned
 //A missing file/env var is not an error. Most machines will only have some of
 //these configured. A file that exists but fails to read is a real error
+//
+//Both methods below call into secret.go's fetchFromX function to actually
+//retrieve the value for presence-checking, but only ever store SOURCE
+//information on the returned Credential; never the value itself. See the doc
+//comment on the const block above
 func (p *Provider) Discover(ctx context.Context, 
 	cfg providers.DiscoveryConfig) ([]models.Credential, error) {
 
@@ -134,12 +169,14 @@ var knownEnvVars = []string{
 func discoverFromEnv() []models.Credential {
 
 	var found []models.Credential
-	seen := make(map[string]bool)  //avoid double-counting if two env vars hold the same value
+
+	//avoid double-counting if two env vars hold the same value
+	seenEnvVars := make(map[string]bool)
 
 	for _, envVar := range knownEnvVars {
 
-		value := os.Getenv(envVar)
-		if value == "" || seen[value] {
+		value, ok := fetchFromEnv(envVar)
+		if !ok || value == "" {
 
 			continue
 
@@ -147,17 +184,28 @@ func discoverFromEnv() []models.Credential {
 		subtype, ok := classifyStripeCredential(value)
 		if !ok {
 
-			continue  //present but doesn't match any known Stripe prefix
+  			//present but doesn't match any known Stripe prefix
+			continue
 
 		}
-		seen[value] = true
+		if seenEnvVars[value] {
+
+			continue
+
+		}
+		seenEnvVars[value] = true
 		found = append(found, models.Credential{
 
 			Provider: "stripe",
 			Subtype: subtype,
 			Location: "env:" + envVar,
 			DiscoveryConfidence: models.DiscoveryPatternMatched,
-			Metadata: map[string]string{metaValue: value},
+			Metadata: map[string]string{
+
+				metaSourceMethod: "env",
+				metaSourceEnvVar: envVar,
+
+			},
 
 		})
 
@@ -169,54 +217,27 @@ func discoverFromEnv() []models.Credential {
 
 //discoverFromConfigToml does a minimal, targeted read of the Stripe CLI's
 //config.toml, looking for lines matching "key = value" under any [section]
-//header. Deliberately not a full TOML parser, mirroring the same reasoning as
-//GitHub's hosts.yml handling: this file's structure for our purposes is simple
-//and stable (flat key-value pairs per section), and a full TOML dependency is
-//unwarranted for extracting a handful of predictable fields. Every value across
-//every section that matches a known Stripe prefix is captured, regardless of
-//the field name it's under. This means it also naturally tolerates Stripe
-//adding new field names to this file later, since classification is by value
-//shape, not by field name
+//header, via secret.go's fetchFromConfigToml. Deliberately not a full TOML
+//parser, mirroring the same reasoning as GitHub's hosts.yml handling: this
+//file's structure for our purposes is simple and stable (flat key-value pairs
+//per section), and a full TOML dependency is unwarranted for extracting a
+//handful of predictable fields. Every value across every section that matches
+//a known Stripe prefix is captured, regardless of the field name it's under.
+//This means it also naturally tolerates Stripe adding new field names to this
+//file later, since classification is by value shape, not by field name
 func discoverFromConfigToml(path string) ([]models.Credential, error) {
 
-	f, err := os.Open(path)
-	if os.IsNotExist(err) {
-
-		return nil, nil
-
-	}
+	entries, err := scanConfigToml(path)
 	if err != nil {
 
-		return nil, fmt.Errorf("stripe: opening %s: %w", path, err)
+		return nil, err
 
 	}
-	defer f.Close()
 
 	var found []models.Credential
-	currentSection := "default"
+	for _, entry := range entries {
 
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-
-		line := strings.TrimSpace(scanner.Text())
-
-		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
-
-			currentSection = strings.Trim(line, "[]")
-			continue
-
-		}
-
-		key, value, ok := strings.Cut(line, "=")
-		if !ok {
-
-			continue
-
-		}
-		key = strings.TrimSpace(key)
-		value = strings.Trim(strings.TrimSpace(value), `"`)
-
-		subtype, ok := classifyStripeCredential(value)
+		subtype, ok := classifyStripeCredential(entry.value)
 		if !ok {
 
 			continue
@@ -227,16 +248,18 @@ func discoverFromConfigToml(path string) ([]models.Credential, error) {
 
 			Provider: "stripe",
 			Subtype: subtype,
-			Location: fmt.Sprintf("%s [%s project, %s]", path, currentSection, key),
+			Location: fmt.Sprintf("%s [%s project, %s]", path, entry.section, entry.key),
 			DiscoveryConfidence: models.DiscoveryExact,
-			Metadata: map[string]string{metaValue: value},
+			Metadata: map[string]string{
+
+				metaSourceMethod: "config_toml",
+				metaSourceFilePath: path,
+				metaSourceSection: entry.section,
+				metaSourceKey: entry.key,
+
+			},
 
 		})
-
-	}
-	if err := scanner.Err(); err != nil {
-
-		return nil, fmt.Errorf("stripe: reading %s: %w", path, err)
 
 	}
 

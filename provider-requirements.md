@@ -201,12 +201,68 @@ webhook secrets and Connect client IDs.
 
 ## SendGrid
 
-Status: not yet researched in depth.
+### deadkey usage
 
-Known so far: the "list API keys" endpoint returns only name and ID, no
-last-used field. An Email Activity Feed API exists but tracks email
-delivery events, not API key usage, and retains only 7 days. Likely a
-genuine ActivityUnavailable case. Needs a full research pass before design.
+- `deadkey scan --provider sendgrid` - scan for SendGrid credentials only
+- `deadkey add` -> select "SendGrid" -> manually register a credential
+- `deadkey ignore <location>` -> stop flagging a specific credential slot
+
+Discovery checks four environment variables: SENDGRID_API_KEY and
+SENDGRID_TOKEN for modern API keys (classified by the "SG." prefix, not by
+character length, since real-world reports disagree on whether keys are
+69 or 70 characters), and SENDGRID_USERNAME / SENDGRID_PASSWORD for the
+legacy username/password credential SendGrid still accepts for a narrow
+set of operations. No official SendGrid CLI config file exists (confirmed
+against the real sendgrid/sendgrid-cli source), so unlike AWS or Stripe,
+discovery is env-var-only.
+
+### What deadkey checks, and what each needs
+
+| Check | Required permission | Notes |
+|---|---|---|
+| Discovery | none | reads env vars only, no API call |
+| Basic validation (API keys) | none beyond holding the key | GET /v3/scopes, confirmed self-referential - a key can always check its own scopes |
+| Basic validation (legacy username/password) | none beyond holding the credential | HTTP Basic Auth against the same endpoint. Less confirmed than the API key path - SendGrid documents Basic Auth for updating a key's scopes specifically, not explicitly for this read-only use |
+| Last-used data | none beyond holding the credential | GET /v3/access_settings/activity's last_at field. Account-level, not per-key - reported as ActivityInferred, not Confirmed |
+| Broad-scope risk flags | none | derived from scopes already captured during validation, no extra API call |
+| Legacy-credential and inferred-no-MFA flags | none, legacy credentials only | inferred from SendGrid's documented behavior that MFA-enabled accounts reject Basic Auth entirely |
+
+### Provider-side setup
+
+- No setup is required beyond having a credential. All checks work with
+  zero additional permissions or configuration.
+- To create a Restricted Access key with only the scopes you need instead
+  of Full Access: https://www.twilio.com/docs/sendgrid/ui/account-and-settings/api-keys
+- To move teammates off legacy passwords entirely, SendGrid supports SAML
+  SSO on Pro, Premier, and Marketing Campaigns Advanced plans:
+  https://www.twilio.com/docs/sendgrid/ui/account-and-settings/sso
+
+### Known limitations
+
+- No per-key last-used data exists. GET /v3/access_settings/activity is
+  account-level (most recent access by any method, any credential), not
+  tied to a specific key - a real, usable signal, but an inferred one, not
+  a confirmed per-credential fact the way AWS's is.
+- No confirmed API exposes whether MFA/2FA is enabled on an account
+  directly. deadkey infers MFA is off for legacy username/password
+  credentials specifically, based on SendGrid's documented behavior that
+  MFA-enabled accounts reject Basic Authentication entirely. This
+  inference has no equivalent for API key credentials, which never
+  interact with MFA/Basic Auth at all.
+- The legacy username/password discovery env var names (SENDGRID_USERNAME,
+  SENDGRID_PASSWORD) are a reasonable convention, not an independently
+  confirmed universal standard the way SENDGRID_API_KEY is.
+- SendGrid's webhook signature verification key (ECDSA) and SSO SAML
+  certificate are deliberately NOT treated as credentials to protect -
+  both are public keys by design (SendGrid keeps the corresponding private
+  material), and flagging them as at-risk secrets would be incorrect. The
+  webhook OAuth client_id/client_secret some integrations configure is
+  also out of scope - it is the developer's own arbitrary OAuth app
+  registration, not a SendGrid-issued credential, and has no confirmed
+  universal naming convention to discover.
+- Team member listing, roles, and SCIM-style provisioning exist on
+  Enterprise-tier plans via a private beta, not generally available at
+  time of writing - not implemented in V0.
 
 ---
 

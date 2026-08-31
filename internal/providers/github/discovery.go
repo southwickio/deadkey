@@ -2,13 +2,10 @@ package github
 
 import (
 
-	"bufio"  //reads files/command output line-by-line or word-by-word
 	"context"  //carries cancellation/deadline signals through function calls
 	"fmt"  //string formatting and building error messages
-	"os"  //reading env vars, opening files, finding the home directory
-	"os/exec"  //running external commands (gh, git) as subprocesses
+	"os"  //reading env vars, finding the home directory
 	"path/filepath"  //building file paths correctly across operating systems
-	"strings"  //string manipulation (trimming, splitting, prefix checks)
 
 	"github.com/southwickio/deadkey/internal/models"
 	"github.com/southwickio/deadkey/internal/providers"
@@ -18,9 +15,25 @@ import (
 const subtypePersonalAccessToken models.CredentialSubtype = "personal_access_token"
 
 //Metadata keys this provider writes onto Credential.Metadata
+//
+//The raw token itself is NEVER written here. Metadata lives on Credential,
+//which is embedded in CredentialAssessment, which is what gets written to local
+//SQLite and used as the basis for cloud sync. Only non-sensitive pointers back
+//to where the token lives are stored. secret.go re-fetches the actual token
+//fresh, from its original source, every time 
+//Validate/GetActivity/RiskModifiers need it
 const (
 
-	metaToken = "github_token"
+	//"env", "gh_cli", "hosts_yml", "netrc", "git_credentials_file", or
+	//"git_credential_helper"
+	metaSourceMethod = "github_source_method"
+
+	//which env var, when metaSourceMethod is "env"
+	metaSourceEnvVar = "github_source_env_var"
+
+    //which file, when metaSourceMethod is "hosts_yml", "netrc", or
+	//"git_credentials_file"
+	metaSourceFilePath = "github_source_file_path"
 
 )
 
@@ -65,6 +78,11 @@ const (
 //will only have some of these configured, and that's the normal case. A file
 //that exists but fails to parse, or a command that fails for a reason other
 //than "not found," is a real error worth surfacing
+//
+//Each method below calls into secret.go's fetchFromX function to actually
+//retrieve the token for presence-checking, but only ever stores SOURCE
+//information (method + env var name or file path) on the returned Credential;
+//never the token value itself. See the doc comment on the const block above
 func (p *Provider) Discover(ctx context.Context, 
 	cfg providers.DiscoveryConfig) ([]models.Credential, error) {
 
@@ -140,7 +158,7 @@ func discoverFromEnv() (models.Credential, bool) {
 
 	for _, envVar := range []string{"GITHUB_TOKEN", "GH_TOKEN"} {
 
-		if token := os.Getenv(envVar); token != "" {
+		if token, ok := fetchFromEnv(envVar); ok && token != "" {
 
 			return models.Credential{
 
@@ -148,7 +166,12 @@ func discoverFromEnv() (models.Credential, bool) {
 				Subtype: subtypePersonalAccessToken,
 				Location: "env:" + envVar,
 				DiscoveryConfidence: models.DiscoveryPatternMatched,
-				Metadata: map[string]string{metaToken: token},
+				Metadata: map[string]string{
+
+					metaSourceMethod: "env",
+					metaSourceEnvVar: envVar,
+
+				},
 
 			}, true
 
@@ -161,18 +184,13 @@ func discoverFromEnv() (models.Credential, bool) {
 
 //discoverFromGHCLI shells out to `gh auth token`, GitHub's own documented
 //command for retrieving the currently active token regardless of where gh
-//stored it. A missing gh binary, or gh reporting no active session, is not an
-//error. It simply means this discovery method found nothing
+//stored it, via secret.go's fetchFromGHCLI. A missing gh binary, or gh
+//reporting no active session, is not an error. It simply means this discovery
+//method found nothing
 func discoverFromGHCLI(ctx context.Context) (models.Credential, bool) {
 
-	out, err := exec.CommandContext(ctx, "gh", "auth", "token").Output()
-	if err != nil {
-
-		return models.Credential{}, false
-
-	}
-	token := strings.TrimSpace(string(out))
-	if token == "" {
+	token, ok := fetchFromGHCLI(ctx)
+	if !ok || token == "" {
 
 		return models.Credential{}, false
 
@@ -183,71 +201,53 @@ func discoverFromGHCLI(ctx context.Context) (models.Credential, bool) {
 		Subtype: subtypePersonalAccessToken,
 		Location: "gh CLI (gh auth token)",
 		DiscoveryConfidence: models.DiscoveryExact,
-		Metadata: map[string]string{metaToken: token},
+		Metadata: map[string]string{
+
+			metaSourceMethod: "gh_cli",
+
+		},
 
 	}, true
 
 }
 
-//discoverFromHostsYML does a minimal, targeted read of gh's hosts.yml looking
-//only for a plaintext "oauth_token:" line. Deliberately not a full YAML parser.
-//The file's only field this provider needs is the token itself, and a full YAML
-//dependency is unwarranted for one field. A missing file is not an error (most
+//discoverFromHostsYML checks gh's hosts.yml for a plaintext "oauth_token:"
+//line, via secret.go's fetchFromHostsYML. A missing file is not an error (most
 //machines using the modern keyring-backed gh won't have a plaintext token in
 //this file at all)
 func discoverFromHostsYML(path string) (models.Credential, bool, error) {
 
-	f, err := os.Open(path)
-	if os.IsNotExist(err) {
+	token, ok, err := fetchFromHostsYML(path)
+	if err != nil {
+
+		return models.Credential{}, false, err
+
+	}
+	if !ok || token == "" {
 
 		return models.Credential{}, false, nil
 
 	}
-	if err != nil {
+	return models.Credential{
 
-		return models.Credential{}, 
-		false, 
-		fmt.Errorf("github: opening %s: %w", path, err)
+		Provider: "github",
+		Subtype: subtypePersonalAccessToken,
+		Location: fmt.Sprintf("%s (oauth_token)", path),
+		DiscoveryConfidence: models.DiscoveryExact,
+		Metadata: map[string]string{
 
-	}
-	defer f.Close()
+			metaSourceMethod: "hosts_yml",
+			metaSourceFilePath: path,
 
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
+		},
 
-		line := strings.TrimSpace(scanner.Text())
-		if key, value, ok := strings.Cut(line, ":"); ok && strings.TrimSpace(key) == "oauth_token" {
-
-			token := strings.TrimSpace(value)
-			if token == "" {
-
-				continue
-
-			}
-			return models.Credential{
-
-				Provider: "github",
-				Subtype: subtypePersonalAccessToken,
-				Location: fmt.Sprintf("%s (oauth_token)", path),
-				DiscoveryConfidence: models.DiscoveryExact,
-				Metadata: map[string]string{metaToken: token},
-
-			}, true, nil
-
-		}
-
-	}
-	if err := scanner.Err(); err != nil {
-
-		return models.Credential{}, false, fmt.Errorf("github: reading %s: %w", path, err)
-
-	}
-	return models.Credential{}, false, nil
+	}, true, nil
 
 }
 
-//discoverFromNetrc looks for a "machine github.com ... password <token>" entry.
-//Format confirmed against curl/git's own documented .netrc syntax
+//discoverFromNetrc looks for a "machine github.com ... password <token>" entry
+//via secret.go's fetchFromNetrc. Format confirmed against curl/git's own
+//documented .netrc syntax
 func discoverFromNetrc() (models.Credential, bool, error) {
 
 	home, err := os.UserHomeDir()
@@ -260,76 +260,38 @@ func discoverFromNetrc() (models.Credential, bool, error) {
 	}
 	path := filepath.Join(home, ".netrc")
 
-	f, err := os.Open(path)
-	if os.IsNotExist(err) {
+	token, ok, err := fetchFromNetrc(path)
+	if err != nil {
+
+		return models.Credential{}, false, err
+
+	}
+	if !ok || token == "" {
 
 		return models.Credential{}, false, nil
 
 	}
-	if err != nil {
+	return models.Credential{
 
-		return models.Credential{}, 
-		false, 
-		fmt.Errorf("github: opening %s: %w", path, err)
+		Provider: "github",
+		Subtype: subtypePersonalAccessToken,
+		Location: fmt.Sprintf("%s (machine github.com)", path),
+		DiscoveryConfidence: models.DiscoveryExact,
+		Metadata: map[string]string{
 
-	}
-	defer f.Close()
+			metaSourceMethod: "netrc",
+			metaSourceFilePath: path,
 
-	//.netrc is whitespace-tokenized, not line-oriented. So an entry may span
-	//multiple lines. Read the whole file and tokenize it
-	scanner := bufio.NewScanner(f)
-	scanner.Split(bufio.ScanWords)
+		},
 
-	var tokens []string
-	for scanner.Scan() {
-
-		tokens = append(tokens, scanner.Text())
-
-	}
-	if err := scanner.Err(); err != nil {
-
-		return models.Credential{},
-		false,
-		fmt.Errorf("github: reading %s: %w", path, err)
-
-	}
-
-	inGitHubMachine := false
-	for i := 0; i < len(tokens); i++ {
-
-		switch tokens[i] {
-
-		case "machine":
-			if i+1 < len(tokens) {
-
-				inGitHubMachine = tokens[i+1] == "github.com"
-
-			}
-		case "password":
-			if inGitHubMachine && i+1 < len(tokens) {
-
-				return models.Credential{
-
-					Provider: "github",
-					Subtype: subtypePersonalAccessToken,
-					Location: fmt.Sprintf("%s (machine github.com)", path),
-					DiscoveryConfidence: models.DiscoveryExact,
-					Metadata: map[string]string{metaToken: tokens[i+1]},
-
-				}, true, nil
-
-			}
-
-		}
-
-	}
-	return models.Credential{}, false, nil
+	}, true, nil
 
 }
 
 //discoverFromGitCredentialsFile reads git's plaintext "store" helper file,
-//looking for a github.com entry. Format confirmed against git's own
-//documentation: one URL per line, "https://user:TOKEN@github.com"
+//looking for a github.com entry via secret.go's fetchFromGitCredentialsFile.
+//Format confirmed against git's own documentation: one URL per line,
+//"https://user:TOKEN@github.com"
 func discoverFromGitCredentialsFile() (models.Credential, bool, error) {
 
 	home, err := os.UserHomeDir()
@@ -342,100 +304,41 @@ func discoverFromGitCredentialsFile() (models.Credential, bool, error) {
 	}
 	path := filepath.Join(home, ".git-credentials")
 
-	f, err := os.Open(path)
-	if os.IsNotExist(err) {
+	token, ok, err := fetchFromGitCredentialsFile(path)
+	if err != nil {
+
+		return models.Credential{}, false, err
+
+	}
+	if !ok || token == "" {
 
 		return models.Credential{}, false, nil
 
 	}
-	if err != nil {
+	return models.Credential{
 
-		return models.Credential{},
-		false,
-		fmt.Errorf("github: opening %s: %w", path, err)
+		Provider: "github",
+		Subtype: subtypePersonalAccessToken,
+		Location: fmt.Sprintf("%s (github.com entry)", path),
+		DiscoveryConfidence: models.DiscoveryExact,
+		Metadata: map[string]string{
 
-	}
-	defer f.Close()
+			metaSourceMethod: "git_credentials_file",
+			metaSourceFilePath: path,
 
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
+		},
 
-		line := strings.TrimSpace(scanner.Text())
-		if !strings.Contains(line, "github.com") {
-
-			continue
-
-		}
-		//https://username:TOKEN@github.com - extract between ':' and '@'
-		atIdx := strings.LastIndex(line, "@")
-		if atIdx == -1 {
-
-			continue
-
-		}
-		beforeAt := line[:atIdx]
-		colonIdx := strings.LastIndex(beforeAt, ":")
-		if colonIdx == -1 {
-
-			continue
-
-		}
-		token := beforeAt[colonIdx+1:]
-		if token == "" {
-
-			continue
-
-		}
-		return models.Credential{
-
-			Provider: "github",
-			Subtype: subtypePersonalAccessToken,
-			Location: fmt.Sprintf("%s (github.com entry)", path),
-			DiscoveryConfidence: models.DiscoveryExact,
-			Metadata: map[string]string{metaToken: token},
-
-		}, true, nil
-
-	}
-	if err := scanner.Err(); err != nil {
-
-		return models.Credential{}, 
-		false, 
-		fmt.Errorf("github: reading %s: %w", path, err)
-
-	}
-	return models.Credential{}, false, nil
+	}, true, nil
 
 }
 
 //discoverFromGitCredentialHelper shells out to `git credential fill`, git's own
 //documented interface for resolving a credential through whichever helper is
-//actually configured (OS keyring, Git Credential Manager, or otherwise). The
-//same approach as discoverFromGHCLI, and for the same reason: git's own
-//official command is a stable, documented contract, unlike guessing at any
-//specific backend's private storage format
+//actually configured, via secret.go's fetchFromGitCredentialHelper
 func discoverFromGitCredentialHelper(ctx context.Context) (models.Credential, bool) {
 
-	cmd := exec.CommandContext(ctx, "git", "credential", "fill")
-	cmd.Stdin = strings.NewReader("protocol=https\nhost=github.com\n\n")
-	out, err := cmd.Output()
-	if err != nil {
-
-		return models.Credential{}, false
-
-	}
-
-	var token string
-	for _, line := range strings.Split(string(out), "\n") {
-
-		if key, value, ok := strings.Cut(line, "="); ok && key == "password" {
-
-			token = strings.TrimSpace(value)
-
-		}
-
-	}
-	if token == "" {
+	token, ok := fetchFromGitCredentialHelper(ctx)
+	if !ok || token == "" {
 
 		return models.Credential{}, false
 
@@ -446,7 +349,11 @@ func discoverFromGitCredentialHelper(ctx context.Context) (models.Credential, bo
 		Subtype: subtypePersonalAccessToken,
 		Location: "git credential helper (git credential fill)",
 		DiscoveryConfidence: models.DiscoveryExact,
-		Metadata: map[string]string{metaToken: token},
+		Metadata: map[string]string{
+
+			metaSourceMethod: "git_credential_helper",
+
+		},
 
 	}, true
 

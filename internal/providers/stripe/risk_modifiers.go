@@ -43,8 +43,8 @@ const (
 func (p *Provider) RiskModifiers(ctx context.Context, 
 	cred models.Credential) ([]models.RiskModifier, error) {
 
-	value, ok := cred.Metadata[metaValue]
-	if !ok || value == "" {
+	value, err := resolveStripeValue(ctx, cred)
+	if err != nil {
 
 		return nil, nil
 
