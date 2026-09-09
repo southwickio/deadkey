@@ -45,6 +45,19 @@ const (
 	//dead"
 	ValidationError ValidationStatus = "error"
 
+	//ValidationAccountInactive means the credential itself authenticated (it
+	//is not wrong/revoked, and it is not simply lacking a permission), but the
+	//account it belongs to is suspended, closed, or otherwise inactive for a
+	//reason unrelated to whether anyone still uses this specific credential.
+	//
+	//This is deliberately its own status rather than folded into
+	//ValidationInvalid or ValidationRotate/Dead risk tiers: a suspended account
+	//is not "safe to revoke because it's old and forgotten," it's already
+	//non-functional for an unrelated (often billing or policy) reason, and the
+	////risk engine and dashboard must not present the two cases the same way
+	//
+	ValidationAccountInactive ValidationStatus = "account_inactive"
+
 )
 
 //ValidationResult is the independent record of whether a credential was
@@ -66,6 +79,17 @@ type ValidationResult struct {
 	//ErrorDetail holds a human-readable explanation when Status is
 	//ValidationError. Left empty otherwise
 	ErrorDetail string
+
+	//CheckedEndpoint optionally records the concrete host/endpoint this check
+	//actually ran against (for example: "api.sydney.jp1.twilio.com" versus
+	//the default "api.twilio.com")
+	//
+	//Left empty for providers with only one possible endpoint. This exists so a
+	//result is auditable: if a provider has region- or environment-specific
+	//endpoints (for example: Twilio's Regions/Edges), a "valid"/"invalid"
+	//result alone doesn't tell you whether it was checked against the right
+	//place. Optional and additive; no existing provider needs to set it
+	CheckedEndpoint string
 
 }
 
