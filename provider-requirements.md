@@ -48,6 +48,12 @@ fully researched, designed, and implemented as of this revision.
 
 ### Known limitations
 
+- Cross-scan identity for this credential uses the AWS access key ID as a
+  safe, non-secret Identifier (see models.Credential.Identifier), not just
+  Location - meaning the same key found via a different profile/file/env
+  var across scans is still recognized as the same credential. Access key
+  IDs are designed to be non-secret (AWS displays them unmasked in the
+  console/CLI), so this is safe to store
 - No distinguishable "account suspended" signal exists at the
   sts:GetCallerIdentity layer. Confirmed by checking STS's own complete,
   documented exception list (every subclass of Aws::STS::ServiceError):
@@ -220,6 +226,20 @@ webhook secrets and Connect client IDs.
 
 ### Known limitations
 
+- Stripe has a newer, preview-only API surface (v2/iam/api_keys) exposing a
+  distinct "Managed API Key" credential type (mk_ prefix) with its own
+  unique ID, last_used, status, and expires_at fields - none of which apply
+  to the ordinary secret/restricted/publishable keys this provider
+  discovers today. Confirmed: managed keys are a structurally different
+  credential, issued directly by a hosting platform to an application
+  rather than something a developer manually places in an env var or
+  config file, and the feature itself is still request-access-only
+  ("Request to join the preview for managed API keys" - docs.stripe.com/
+  keys/managed-api-keys). Explicitly parked as a future, separate provider
+  addition (a sixth Stripe credential subtype, with its own full Steps 1-5
+  research pass) if/when this reaches general availability and becomes
+  common enough to matter - not a gap in what this provider currently
+  covers
 - No last-used/activity data exists for any Stripe credential type.
   Confirmed: Stripe's Activity Logs API
   (https://docs.stripe.com/activity-logs) tracks key management events
@@ -399,6 +419,12 @@ check instead.
 
 ### Known limitations
 
+- Cross-scan identity for both Twilio credential shapes uses a safe,
+  non-secret Identifier (the Account SID for an Auth-Token credential, the
+  API Key SID for an API-Key credential - see models.Credential.Identifier),
+  not just Location. Both are designed to be non-secret: they're the
+  username half of this credential's Basic Auth pair, shown unmasked
+  throughout the Console and API responses
 - No per-credential last-used data exists anywhere in Twilio's API, at any
   permission tier, for either Auth Tokens or API Keys. Confirmed: the Key
   resource exposes only date_created/date_updated (checked against two

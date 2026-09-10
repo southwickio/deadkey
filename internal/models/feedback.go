@@ -20,36 +20,41 @@ package models
 //    name must be normalized/bucketed before it reaches this struct, never
 //    passed through as raw text. That normalization happens upstream of this
 //    type, not here)
+//
+//json tags use snake_case, matching the convention already used by
+//internal/output's Report type. This is the wire format an ingest endpoint will
+//receive, so it needs a stable, deliberate shape rather than Go's default
+//field-name-as-is behavior
 type FeedbackPayload struct {
 
 	//InstallID is a random identifier generated once locally on first run and
 	//stored locally. Not tied to any account, email, or other identifying
 	//information. It exists purely so aggregate telemetry can distinguish
 	//"10 different installs agreed" from "1 install voted 10 times"
-	InstallID string
+	InstallID string `json:"install_id"`
 
-	Provider       string
-	CredentialType CredentialSubtype
+	Provider       string            `json:"provider"`
+	CredentialType CredentialSubtype `json:"credential_type"`
 
 	//ModifierCodes lists the stable RiskModifier.Code values that fired for
 	//this credential (see risk.go for why Code must stay stable)
-	ModifierCodes []string
+	ModifierCodes []string `json:"modifier_codes"`
 
-	DiscoveryMethod     string
-	DiscoveryConfidence float64
+	DiscoveryMethod     string  `json:"discovery_method"`
+	DiscoveryConfidence float64 `json:"discovery_confidence"`
 
-	ValidationStatus ValidationStatus
-	ActivityQuality  ActivityQuality
+	ValidationStatus ValidationStatus `json:"validation_status"`
+	ActivityQuality  ActivityQuality  `json:"activity_quality"`
 
-	RiskTier  RiskTier
-	RiskScore int
+	RiskTier  RiskTier `json:"risk_tier"`
+	RiskScore int      `json:"risk_score"`
 
 	//AgeBucket is a coarse, human-readable range like "90-180 days".
 	//Deliberately not an exact date, to avoid indirectly fingerprinting a
 	//specific credential's creation time
-	AgeBucket string
+	AgeBucket string `json:"age_bucket"`
 
 	//Vote is the user's feedback: "up" (the assessment was right) or "down"
 	//(it was wrong)
-	Vote string
+	Vote string `json:"vote"`
 }

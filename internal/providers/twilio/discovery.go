@@ -191,6 +191,13 @@ func discoverFromEnv(region, edge string) []models.Credential {
 			Subtype:             subtypeAuthToken,
 			Location:            "env:TWILIO_ACCOUNT_SID+TWILIO_AUTH_TOKEN",
 			DiscoveryConfidence: models.DiscoveryPatternMatched,
+
+			//The Account SID is safe to use as-is: Twilio itself treats it as
+			//non-secret (it's the literal username half of Basic Auth, shown
+			//unmasked everywhere in the Console and API responses). See
+			//models.Credential.Identifier's doc comment
+			Identifier:          accountSID,
+
 			Metadata:            withRegionEdge(map[string]string{
 
 				metaAccountSID: accountSID,
@@ -249,11 +256,18 @@ func discoverFromEnv(region, edge string) []models.Credential {
 			Subtype:             subtypeAPIKey,
 			Location:            "env:" + sidVar,
 			DiscoveryConfidence: models.DiscoveryPatternMatched,
+
+			//An API Key SID (like the Account SID above) is designed to be
+			//non-secret. It's the username half of this credential's Basic Auth
+			//pair, never the secret itself
+			Identifier:          meta[metaAPIKeySID],
+
 			Metadata:            withRegionEdge(meta, region, edge),
 
 		})
-
-		break //don't double-report the same key under both naming conventions
+		
+		//don't double-report the same key under both naming conventions
+		break
 
 	}
 
@@ -314,6 +328,11 @@ func discoverFromDotEnvFile(path string) []models.Credential {
 			Subtype:             subtypeAuthToken,
 			Location:            path + " [TWILIO_ACCOUNT_SID+TWILIO_AUTH_TOKEN]",
 			DiscoveryConfidence: models.DiscoveryPatternMatched,
+
+			//See the env-var Account SID+Auth Token case above for why this is
+			//safe to use as a non-secret identifier
+			Identifier:          accountSID,
+
 			Metadata: withRegionEdge(map[string]string{
 
 				metaAccountSID:     accountSID,
@@ -377,6 +396,11 @@ func discoverFromDotEnvFile(path string) []models.Credential {
 			Subtype:             subtypeAPIKey,
 			Location:            path + " [" + sidVar + "]",
 			DiscoveryConfidence: models.DiscoveryPatternMatched,
+
+			//See the env-var API Key case above for why this is safe to use as
+			//a non-secret identifier
+			Identifier:          meta[metaAPIKeySID],
+
 			Metadata:            withRegionEdge(meta, region, edge),
 
 		})
@@ -435,6 +459,11 @@ func discoverFromCLIConfig(path string) []models.Credential {
 			Subtype:             subtypeAPIKey,
 			Location:            path + " [profile:" + name + "]",
 			DiscoveryConfidence: models.DiscoveryExact,
+
+			//The API Key SID stored in a twilio-cli profile is the same safe,
+			//non-secret identifier as the env-var/file-discovered cases above
+			Identifier:          proj.ApiKey,
+
 			Metadata: withRegionEdge(map[string]string{
 
 				metaAccountSID:     proj.AccountSid,

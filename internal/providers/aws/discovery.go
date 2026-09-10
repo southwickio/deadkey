@@ -196,6 +196,14 @@ func buildFileCredential(path, profile, accessKeyID string) models.Credential {
 		Subtype: subtypeAccessKey,
 		Location: fmt.Sprintf("%s [%s profile]", path, profile),
 		DiscoveryConfidence: models.DiscoveryExact,
+
+		//An AWS access key ID is safe to use as-is: it is designed to be
+		//non-secret (AWS itself displays it unmasked in the console and CLI
+		//output), so it's a reliable way to recognize this same credential
+		//again later even if it moves to a different profile/file/env var.
+		//See models.Credential.Identifier's doc comment
+		Identifier: accessKeyID,
+
 		Metadata: map[string]string{
 	
 			metaProfile: profile,
@@ -229,6 +237,10 @@ func discoverFromEnv() (models.Credential, bool) {
 		Subtype: subtypeAccessKey,
 		Location: "env:AWS_ACCESS_KEY_ID",
 		DiscoveryConfidence: models.DiscoveryPatternMatched,
+
+		//See buildFileCredential's comment on Identifier above
+		Identifier: accessKeyID,
+
 		Metadata: map[string]string{
 
 			metaAccessKeyID: accessKeyID,

@@ -198,13 +198,16 @@ func (c *Config) IsFirstRun() bool {
 }
 
 //SetTelemetry records the person's answer (or the safe non-interactive default.
-//See cmd/deadkey/scan.go), generating a fresh anonymous InstallID
-//the first time this is ever called
+//See cmd/deadkey/scan.go)
+//
+//InstallID is only generated on an actual opt-in (optedIn == true). A later
+//opt-in (someone runs `deadkey config telemetry on` after initially declining)
+//still only generates it once, via the same c.Telemetry.InstallID == "" check
 func (c *Config) SetTelemetry(optedIn bool) {
 
 	c.Telemetry.OptedIn = optedIn
 	c.Telemetry.AskedAt = time.Now().UTC()
-	if c.Telemetry.InstallID == "" {
+	if optedIn && c.Telemetry.InstallID == "" {
 
 		c.Telemetry.InstallID = newInstallID()
 
