@@ -72,6 +72,19 @@ type Credential struct {
 	//evidence.go for the independent "is it real" fact
 	DiscoveryConfidence DiscoveryConfidence
 
+	//Identifier is an optional, non-secret identifier this provider can supply
+	//when one exists (AWS's access key ID, Twilio's Account/Key SID, a
+	//Stripe key's own prefix, etc...). When set, storage matches this
+	//credential across scans by (Provider, Identifier) instead of (Provider,
+	//Location), so the same credential is still recognized if Location changes
+	//(for example: the same key found via a different env var, or a different
+	//file, in a later scan). Left empty for credential shapes with no safe
+	//non-secret identifier (for example: GitHub tokens, SendGrid API keys).
+	//Storage falls back to (Provider, Location) matching for documented or
+	//partial limitations rather than a universal fix. Not yet populated by
+	//every provider as of this field's introduction
+	Identifier string
+
 	//Metadata holds provider-specific extras that don't belong in the shared
 	//schema (e.g. an AWS ARN, GitHub token scopes). Each provider should define
 	//its own constants for the keys it writes here, to avoid typos and ad-hoc

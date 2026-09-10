@@ -20,6 +20,18 @@ const (
 	//RiskKeep means nothing about this credential currently warrants action
 	RiskKeep RiskTier = "keep"
 
+	//RiskAccountInactive means the credential authenticated correctly but its
+	//account is suspended, closed, or otherwise inactive for a reason unrelated
+	//to whether anyone still uses this credential (see
+	//models.ValidationAccountInactive in evidence.go). Deliberately kept
+	//separate from RiskDead: an account-inactive finding isn't "safe to revok
+	// because it's old and forgotten," and scoring it alongside normal
+	//age/activity-based findings would misrepresent why it needs attention.
+	//The scoring engine (internal/risk) short-circuits to this tier without
+	//running its normal age/activity math whenever Validation.Status is
+	//ValidationAccountInactive
+	RiskAccountInactive RiskTier = "account_inactive"
+
 )
 
 //RiskModifier is a single typed adjustment a provider can contribute to a
