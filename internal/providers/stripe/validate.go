@@ -3,6 +3,7 @@ package stripe
 import (
 
 	"context"  //carries cancellation/deadline signals through function calls
+	"encoding/json"  //parsing the Account resource's JSON response
 	"fmt"  //string formatting and building error messages
 	"io"  //reading raw response bodies
 	"net/http"  //making HTTP requests to Stripe's API
@@ -14,22 +15,57 @@ import (
 
 )
 
+//accountResource is the subset of Stripe's Account object this provider
+//reads. Docs: docs.stripe.com/api/accounts/retrieve. `requirements` (and its
+//`disabled_reason` field) is the real, documented signal for "this account
+//cannot currently do things," confirmed via Stripe's own documentation for both
+//platform-caused restriction (e.g. "platform_paused") and Stripe-caused
+//restriction (e.g. "requirements.past_due", fraud/ToS rejection). This is a
+//field on a successful response, not an error code. A restricted account's key
+//still authenticates fine for this call, which is exactly why it needs its own
+//explicit check rather than being inferable from a failure anywhere else in
+//this provider
+type accountResource struct {
+
+	Requirements struct {
+
+		DisabledReason string `json:"disabled_reason"`
+
+	} `json:"requirements"`
+
+}
+
 //Validate checks whether cred is alive. Behavior differs by subtype, since
 //Stripe's five credential types are not all "API keys" in the same sense. See
 //stripe.go's package doc comment
 //
 //Secret, restricted, and organization keys: calls GET /v1/balance. Confirmed
-//real and documented (docs.stripe.com/api/balance/balance_retrieve). Works for
-//any authenticated key type, requires HTTP Basic Auth with the key as the
-//username and an empty password (docs.stripe.com/api/authentication), NOT a
-//Bearer token
+//and documented (docs.stripe.com/api/balance/balance_retrieve). Works for any
+//authenticated key type, requires HTTP Basic Auth with the key as the username
+//and an empty password (docs.stripe.com/api/authentication), not a Bearer token
+//
+//For these same three subtypes, a successful Balance check is followed by a
+//best-effort bonus check against GET /v1/account
+//(docs.stripe.com/api/accounts/retrieve), which resolves to "the account behind
+//whichever key authenticated this request". No account ID needed. If that call
+//succeeds and requirements.disabled_reason is non-empty, the result is upgraded
+//from ValidationValid to ValidationAccountInactive: the key is real, but the
+//account it belongs to cannot currently do anything, for a reason unrelated to
+//whether this specific key is old or forgotten. Per Stripe's own current
+//documentation (docs.stripe.com/keys/permissions-reference), a Restricted key
+//can only make this bonus call if explicitly granted the connected_account_read
+//permission; an unrestricted secret key or organization key can always make it.
+//If this bonus call fails or is denied, the original Balance-based result is
+//returned unchanged. This is a graceful degradation, never an error or a crash
 //
 //Publishable keys: calls POST /v1/tokens to create a minimal account token.
-//Confirmed real and documented (docs.stripe.com/api/tokens/create_account).
-//In test mode, this same endpoint also accepts a secret key, so a successful
-//response alone does not distinguish live-mode-only pk_ behavior. What matters
-//for validation purposes is simply whether the call succeeds or is rejected as
-//unauthenticated
+//Confirmed and documented (docs.stripe.com/api/tokens/create_account). In test
+//mode, this same endpoint also accepts a secret key, so a successful response
+//alone does not distinguish live-mode-only pk_ behavior. What matters for
+//validation purposes is simply whether the call succeeds or is rejected as
+//unauthenticated. The bonus Account-resource check above is NOT attempted for
+//publishable keys: docs.stripe.com/api/accounts/retrieve documents this
+//endpoint as requiring a secret key, so a publishable key could never read it
 //
 //Webhook secrets and Connect client IDs: neither has a documented API call
 //that confirms liveness:
@@ -96,12 +132,24 @@ func validateViaBalance(ctx context.Context,
 	switch resp.StatusCode {
 
 	case http.StatusOK:
-		return models.ValidationResult{
+		result := models.ValidationResult{
 
 			Status: models.ValidationValid,
 			CheckedAt: checkedAt,
 
-		}, nil
+		}
+
+		//Best-effort bonus check. See this file's Validate doc comment for the
+		//full reasoning. Any failure here leaves result unchanged; never an
+		//error or a crash
+		if disabledReason, ok := checkAccountDisabledReason(ctx, secretOrRestrictedKey); ok && disabledReason != "" {
+
+			result.Status = models.ValidationAccountInactive
+			result.ErrorDetail = "Stripe account requirements.disabled_reason: " + disabledReason
+
+		}
+
+		return result, nil
 	case http.StatusUnauthorized:
 		body, _ := io.ReadAll(resp.Body)
 		return models.ValidationResult{
@@ -127,16 +175,62 @@ func validateViaBalance(ctx context.Context,
 
 }
 
+//checkAccountDisabledReason attempts GET /v1/account and returns
+//(disabledReason, true) if the call succeeded and the field was readable.
+//Returns ("", false) for any failure (network error, non-200 status, permission
+//denial, unparseable body). The caller treats false as "couldn't determine,
+//leave the original result alone," never as evidence of anything.
+//This is deliberately the most conservative possible failure handling: a bonus
+//check that can only ever add information, never take any away
+func checkAccountDisabledReason(ctx context.Context, key string) (string, bool) {
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.stripe.com/v1/account", nil)
+	if err != nil {
+
+		return "", false
+
+	}
+	req.SetBasicAuth(key, "")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+
+		return "", false
+
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+
+		//Most commonly a 403 from a Restricted key lacking
+		//connected_account_read (docs.stripe.com/keys/permissions-reference).
+		//Not an error; just means this bonus signal isn't available for this
+		//key
+		return "", false
+
+	}
+
+	var acct accountResource
+	if err := json.NewDecoder(resp.Body).Decode(&acct); err != nil {
+
+		return "", false
+
+	}
+
+	return acct.Requirements.DisabledReason, true
+
+}
+
 //validateViaAccountToken calls POST /v1/tokens with a minimal, valid account
 //payload, using pubKey as the Basic Auth credential. This is a real API call,
 //not a read-only check the way GET /v1/balance is. It does create a
-//short-lived, single-use token object in the caller's Stripe account as a
-//side effect. This is a deliberate tradeoff: it is the only confirmed way to
+//short-lived, single-use token object in the caller's Stripe account as aside
+//effect. This is a deliberate tradeoff: it is the only confirmed way to
 //validate a publishable key's liveness via the REST API, and Stripe account
-//tokens are inert (they do not represent money movement, customers, or
-//charges; docs.stripe.com/api/tokens/create_account) so the side effect is
-//minimal, but it is not zero-side-effect the way the other validation calls
-//in this provider are. Worth documenting plainly rather than glossing over
+//tokens are inert (they do not represent money movement, customers, or charges;
+//docs.stripe.com/api/tokens/create_account) so the side effect is minimal, but
+//it is not zero-side-effect the way the other validation calls in this provider
+//are
 func validateViaAccountToken(ctx context.Context, 
 	publishableKey string) (models.ValidationResult, error) {
 
