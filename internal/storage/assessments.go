@@ -14,6 +14,17 @@ import (
 //credential's identity for output/reporting to use without a separate query
 type AssessmentRow struct {
 
+	//AssessmentID and CredentialID identify this specific row and its parent
+	//credential in storage. Needed by internal/dashboard so the vote/ignore/
+	//unignore actions can target a specific row - AssessmentRow itself is
+	//read-only reporting data everywhere else in this project (scan.go's
+	//table/JSON/CSV output never needed a stable ID to act on), but a
+	//dashboard is exactly the situation where "which one do I click" becomes
+	//necessary
+	AssessmentID  int64
+	CredentialID  int64
+	FirstSeenAt   time.Time
+
 	Provider string
 	Subtype  string
 	Location string
@@ -98,7 +109,7 @@ func InsertAssessment(db *DB, scanID, credentialID int64, a models.CredentialAss
 func ListForScan(db *DB, scanID int64) ([]AssessmentRow, error) {
 
 	rows, err := db.Query(`
-		SELECT c.provider, c.subtype, c.location,
+		SELECT a.id, a.credential_id, c.first_seen_at, c.provider, c.subtype, c.location,
 			a.ignored, a.discovery_confidence,
 			a.validation_status, a.validation_checked_at, a.validation_error_detail, a.validation_checked_endpoint,
 			a.activity_last_used_at, a.activity_quality, a.activity_source,
@@ -119,13 +130,14 @@ func ListForScan(db *DB, scanID int64) ([]AssessmentRow, error) {
 	for rows.Next() {
 
 		var r AssessmentRow
+		var firstSeenAt string
 		var ignoredInt int
 		var checkedAt, lastUsed sql.NullString
 		var riskScore sql.NullInt64
 		var modifiersJSON string
 
 		if err := rows.Scan(
-			&r.Provider, &r.Subtype, &r.Location,
+			&r.AssessmentID, &r.CredentialID, &firstSeenAt, &r.Provider, &r.Subtype, &r.Location,
 			&ignoredInt, &r.DiscoveryConfidence,
 			&r.ValidationStatus, &checkedAt, &r.ValidationErrorDetail, &r.ValidationCheckedEndpoint,
 			&lastUsed, &r.ActivityQuality, &r.ActivitySource,
@@ -137,6 +149,11 @@ func ListForScan(db *DB, scanID int64) ([]AssessmentRow, error) {
 		}
 
 		r.Ignored = ignoredInt != 0
+		if t, err := time.Parse(time.RFC3339, firstSeenAt); err == nil {
+
+			r.FirstSeenAt = t
+
+		}
 
 		if checkedAt.Valid {
 
@@ -176,5 +193,33 @@ func ListForScan(db *DB, scanID int64) ([]AssessmentRow, error) {
 	}
 
 	return out, rows.Err()
+
+}
+//GetAssessment returns the single assessment row for credentialID within
+//scanID. Used by internal/dashboard's vote/ignore handlers, which need one
+//specific row's full detail (to build a models.FeedbackPayload, or to know
+//a credential's provider/location to ignore) rather than a whole scan's
+//worth of rows. Returns (AssessmentRow{}, false, nil) if no matching row
+//exists, mirroring storage.GetScan's not-found convention
+func GetAssessment(db *DB, scanID, credentialID int64) (AssessmentRow, bool, error) {
+
+	rows, err := ListForScan(db, scanID)
+	if err != nil {
+
+		return AssessmentRow{}, false, err
+
+	}
+
+	for _, r := range rows {
+
+		if r.CredentialID == credentialID {
+
+			return r, true, nil
+
+		}
+
+	}
+
+	return AssessmentRow{}, false, nil
 
 }

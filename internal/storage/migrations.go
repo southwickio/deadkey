@@ -100,6 +100,23 @@ var migrations = []migration{
 
 	},
 
+	{
+
+		//Added when internal/dashboard needed to show which providers failed
+		//outright on a PAST scan, not just the one currently running.
+		//cmd/deadkey/scan.go already computed this in-memory for its own
+		//Report, but never persisted it - this is exactly the kind of gap
+		//the migration system exists to close safely, without touching
+		//version 1's statements or any data already written under it
+		version: 2,
+		statements: []string{
+
+			`ALTER TABLE scans ADD COLUMN providers_failed TEXT`,
+
+		},
+
+	},
+
 }
 
 //migrate brings db up to currentSchemaVersion, applying any migrations it

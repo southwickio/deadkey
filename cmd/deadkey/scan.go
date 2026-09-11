@@ -127,7 +127,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 	}
 
 	startedAt := time.Now().UTC()
-	var providerFailures []output.ProviderFailure
+	var providerFailures []models.ProviderFailure
 
 	for _, p := range activeProviders {
 
@@ -136,7 +136,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 
 			//A provider failing to run at all is reported and skipped, never
 			//aborts the rest of the scan
-			providerFailures = append(providerFailures, output.ProviderFailure{
+			providerFailures = append(providerFailures, models.ProviderFailure{
 
 				Provider: p.Name(),
 				Error:    err.Error(),
@@ -154,7 +154,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 				//error, for instance) is reported inline via a provider-scoped
 				//failure note, rather than losing the rest of that provider's
 				//results
-				providerFailures = append(providerFailures, output.ProviderFailure{
+				providerFailures = append(providerFailures, models.ProviderFailure{
 
 					Provider: p.Name(),
 					Error:    fmt.Sprintf("processing %s: %v", cred.Location, err),
@@ -167,7 +167,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 
 	}
 
-	if err := storage.FinishScan(db, scanID); err != nil {
+	if err := storage.FinishScan(db, scanID, providerFailures); err != nil {
 
 		return err
 

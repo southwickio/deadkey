@@ -1,0 +1,21 @@
+{{define "layout"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<title>deadkey</title>
+	<link rel="stylesheet" href="/static/style.css">
+	<script src="/static/htmx.min.js"></script>
+</head>
+<body>
+	<header>
+		<h1>deadkey</h1>
+		<span class="meta">local dashboard - self-hosted, nothing leaves this machine</span>
+	</header>
+	{{if .HostWarning}}
+	<div class="warning">{{.HostWarning}}</div>
+	{{end}}
+	{{template "content" .}}
+</body>
+</html>
+{{end}}

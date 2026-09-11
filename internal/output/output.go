@@ -7,6 +7,7 @@ import (
 
 	"time"  //timestamps in the report
 
+	"github.com/southwickio/deadkey/internal/models"
 	"github.com/southwickio/deadkey/internal/storage"
 
 )
@@ -19,19 +20,8 @@ type Report struct {
 	StartedAt         time.Time         `json:"started_at"`
 	FinishedAt        time.Time         `json:"finished_at"`
 	ProvidersChecked  []string          `json:"providers_checked"`
-	ProvidersFailed   []ProviderFailure `json:"providers_failed"`
+	ProvidersFailed   []models.ProviderFailure `json:"providers_failed"`
 	Results           []storage.AssessmentRow `json:"results"`
-
-}
-
-//ProviderFailure records a provider whose Discover() call failed outright (for
-//example: an unreadable credentials file). This is surfaced distinctly from a
-//per-credential ValidationError. It means the provider could not even be
-//checked at all, not that one specific credential's status is unknown
-type ProviderFailure struct {
-
-	Provider string `json:"provider"`
-	Error    string `json:"error"`
 
 }
 

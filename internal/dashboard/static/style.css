@@ -1,0 +1,128 @@
+/* deadkey local dashboard styles.
+   Deliberately plain: no framework, no build step, embedded directly into
+   the binary alongside the templates and vendored htmx. See assets.go */
+
+:root {
+	--bg: #0f1115;
+	--panel: #161922;
+	--border: #262b38;
+	--text: #d8dee9;
+	--muted: #7b8496;
+	--dead: #e5484d;
+	--rotate: #f5a623;
+	--keep: #3fb950;
+	--inactive: #8957e5;
+	--error: #6e7681;
+}
+
+* { box-sizing: border-box; }
+
+body {
+	background: var(--bg);
+	color: var(--text);
+	font-family: ui-monospace, "SF Mono", Consolas, monospace;
+	font-size: 14px;
+	margin: 0;
+	padding: 24px;
+}
+
+header {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	margin-bottom: 16px;
+	border-bottom: 1px solid var(--border);
+	padding-bottom: 12px;
+}
+
+header h1 { font-size: 16px; margin: 0; }
+
+.meta { color: var(--muted); font-size: 12px; }
+
+.warning {
+	background: #3a2a12;
+	border: 1px solid var(--rotate);
+	color: var(--rotate);
+	padding: 8px 12px;
+	margin-bottom: 16px;
+	font-size: 12px;
+}
+
+.scan-history {
+	margin-bottom: 16px;
+	font-size: 12px;
+}
+
+.scan-history a { color: var(--muted); margin-right: 8px; text-decoration: none; }
+.scan-history a.current { color: var(--text); font-weight: bold; }
+
+.controls {
+	display: flex;
+	gap: 16px;
+	margin-bottom: 12px;
+	font-size: 12px;
+	color: var(--muted);
+}
+
+.provider-failures {
+	border: 1px solid var(--error);
+	padding: 8px 12px;
+	margin-bottom: 16px;
+	font-size: 12px;
+}
+
+table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+
+th {
+	text-align: left;
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--muted);
+	border-bottom: 1px solid var(--border);
+	padding: 6px 8px;
+}
+
+td {
+	padding: 6px 8px;
+	border-bottom: 1px solid var(--border);
+	vertical-align: top;
+}
+
+tr.ignored { opacity: 0.45; }
+
+.tier {
+	display: inline-block;
+	padding: 1px 6px;
+	font-size: 11px;
+	font-weight: bold;
+	text-transform: uppercase;
+}
+
+.tier-dead { color: var(--dead); }
+.tier-rotate { color: var(--rotate); }
+.tier-keep { color: var(--keep); }
+.tier-account_inactive { color: var(--inactive); }
+.tier-error { color: var(--error); }
+
+.actions { white-space: nowrap; }
+
+.actions button, .actions a {
+	background: none;
+	border: 1px solid var(--border);
+	color: var(--muted);
+	font-family: inherit;
+	font-size: 12px;
+	padding: 1px 6px;
+	margin-left: 4px;
+	cursor: pointer;
+	text-decoration: none;
+}
+
+.actions button:hover, .actions a:hover { color: var(--text); border-color: var(--text); }
+
+.empty-state {
+	color: var(--muted);
+	padding: 40px 0;
+	text-align: center;
+}

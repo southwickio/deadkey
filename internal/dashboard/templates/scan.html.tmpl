@@ -1,0 +1,99 @@
+{{define "content"}}
+
+{{if .Empty}}
+	<div class="empty-state">No scans yet. Run <code>deadkey scan</code> to get started.</div>
+{{else}}
+
+	{{if .RecentScans}}
+	<nav class="scan-history">
+		Recent scans:
+		{{range .RecentScans}}
+			<a href="/scans/{{.ID}}" class="{{if eq .ID $.Scan.ID}}current{{end}}">#{{.ID}}</a>
+		{{end}}
+	</nav>
+	{{end}}
+
+	<div class="meta">
+		Scan #{{.Scan.ID}} - started {{.Scan.StartedAt.Format "2006-01-02 15:04:05 MST"}}
+		{{if not .Scan.FinishedAt.IsZero}} - finished {{.Scan.FinishedAt.Format "15:04:05 MST"}}{{end}}
+		- providers: {{range $i, $p := .Scan.ProvidersRequested}}{{if $i}}, {{end}}{{$p}}{{end}}
+	</div>
+
+	{{if .Scan.ProvidersFailed}}
+	<div class="provider-failures">
+		Providers that could not be checked at all:
+		<ul>
+		{{range .Scan.ProvidersFailed}}
+			<li>{{.Provider}}: {{.Error}}</li>
+		{{end}}
+		</ul>
+	</div>
+	{{end}}
+
+	<div class="controls">
+		<label>
+			<input type="checkbox" {{if .ShowIgnored}}checked{{end}}
+				hx-get="/scans/{{.Scan.ID}}/rows?show_ignored={{if .ShowIgnored}}0{{else}}1{{end}}"
+				hx-target="#rows-tbody" hx-swap="innerHTML">
+			Show ignored
+		</label>
+	</div>
+
+	<table>
+		<thead>
+			<tr>
+				<th>Provider</th>
+				<th>Location</th>
+				<th>Tier</th>
+				<th>Reasoning</th>
+				<th></th>
+			</tr>
+		</thead>
+		<tbody id="rows-tbody">
+			{{template "rows" .RowViews}}
+		</tbody>
+	</table>
+
+{{end}}
+{{end}}
+
+
+{{define "rows"}}
+{{range .}}
+	{{template "row" .}}
+{{else}}
+	<tr><td colspan="5" class="empty-state">No credentials found by any checked provider.</td></tr>
+{{end}}
+{{end}}
+
+
+{{define "row"}}
+<tr class="{{if .Ignored}}ignored{{end}}" id="row-{{.CredentialID}}">
+	<td>{{.Provider}}</td>
+	<td>{{.Location}}</td>
+	<td><span class="tier tier-{{if eq .ValidationStatus "error"}}error{{else}}{{.RiskTier}}{{end}}">
+		{{if eq .ValidationStatus "error"}}couldn't check{{else}}{{.RiskTier}}{{end}}
+	</span></td>
+	<td>{{if eq .ValidationStatus "error"}}{{.ValidationErrorDetail}}{{else}}{{.RiskReasoning}}{{end}}</td>
+	<td class="actions">
+		{{if ne .ValidationStatus "error"}}
+			<button title="This assessment was correct"
+				hx-post="/credentials/{{.CredentialID}}/feedback?scan_id={{.ScanID}}&vote=up"
+				hx-target="#row-{{.CredentialID}}" hx-swap="outerHTML">+</button>
+			<button title="This assessment was wrong"
+				hx-post="/credentials/{{.CredentialID}}/feedback?scan_id={{.ScanID}}&vote=down"
+				hx-target="#row-{{.CredentialID}}" hx-swap="outerHTML">-</button>
+		{{end}}
+		{{if .Ignored}}
+			<button title="Stop ignoring this credential"
+				hx-post="/credentials/{{.CredentialID}}/unignore?scan_id={{.ScanID}}"
+				hx-target="#row-{{.CredentialID}}" hx-swap="outerHTML">&#8634;</button>
+		{{else}}
+			<button title="Ignore this credential"
+				hx-confirm="Ignore this credential? It will be hidden from future scan output by default."
+				hx-post="/credentials/{{.CredentialID}}/ignore?scan_id={{.ScanID}}"
+				hx-target="#row-{{.CredentialID}}" hx-swap="outerHTML">&times;</button>
+		{{end}}
+	</td>
+</tr>
+{{end}}
