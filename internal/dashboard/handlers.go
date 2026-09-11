@@ -15,10 +15,10 @@ import (
 
 )
 
-//handlers holds what every route needs. Deliberately a small, explicit
-//struct rather than package-level globals - net/http handlers are
-//registered once at startup (see server.go) and this makes exactly what
-//state they close over visible in one place
+//handlers holds what every route needs. Deliberately a small, explicit struct
+//rather than package-level globals. net/http handlers are registered once at
+//startup (see server.go) and this makes what state they close over visible in
+//one place
 type handlers struct {
 
 	db          *storage.DB
@@ -27,9 +27,9 @@ type handlers struct {
 
 }
 
-//handleHome sends / to the most recently started scan, or renders the empty
-//state directly if none has ever run - the same content handleScan would
-//show for a scan that doesn't exist, without a redirect loop
+//handleHome sends '/' to the most recently started scan, or renders the empty
+//state directly if none has ever run; the same content handleScan would show
+//for a scan that doesn't exist, without a redirect loop
 func (h *handlers) handleHome(w http.ResponseWriter, r *http.Request) {
 
 	id, ok, err := storage.LatestScanID(h.db)
@@ -50,8 +50,8 @@ func (h *handlers) handleHome(w http.ResponseWriter, r *http.Request) {
 
 }
 
-//handleScan renders the full dashboard page for one scan. {id} may be a
-//literal scan ID, or "latest"
+//handleScan renders the full dashboard page for one scan. {id} may be a literal
+//scan ID, or "latest"
 func (h *handlers) handleScan(w http.ResponseWriter, r *http.Request) {
 
 	view, ok, err := h.loadView(r)
@@ -72,8 +72,8 @@ func (h *handlers) handleScan(w http.ResponseWriter, r *http.Request) {
 
 }
 
-//handleRows renders just the row table body, for the show/hide-ignored
-//toggle's htmx swap - no full page reload for a filter change
+//handleRows renders just the row table body, for the show/hide-ignored toggle's
+//htmx swap. No full page reload for a filter change
 func (h *handlers) handleRows(w http.ResponseWriter, r *http.Request) {
 
 	view, ok, err := h.loadView(r)
@@ -98,13 +98,10 @@ func (h *handlers) handleRows(w http.ResponseWriter, r *http.Request) {
 
 }
 
-//handleFeedback records an up/down vote and sends it via
-//internal/telemetry, per roadmap-v2's design: this is the first-run/
-//first-feedback-action trigger point for telemetry consent, not something
-//that fires silently. A telemetry send failure is deliberately not
-//surfaced to the person clicking the button - see telemetry.SendFeedback's
-//own doc comment for why that's the caller's decision to make, not the
-//sender's
+//handleFeedback records an up/down vote and sends it via internal/telemetry,
+//A telemetry send failure is deliberately not surfaced to the person clicking
+//the button. See telemetry.SendFeedback's doc comment for why that's the
+//caller's decision to make, not the sender's
 func (h *handlers) handleFeedback(w http.ResponseWriter, r *http.Request) {
 
 	credentialID, scanID, ok := parseCredentialAndScan(r)
@@ -139,12 +136,11 @@ func (h *handlers) handleFeedback(w http.ResponseWriter, r *http.Request) {
 
 	if h.cfg.IsFirstRun() {
 
-		//A dashboard button click has no interactive terminal to prompt on
-		//the way cmd/deadkey/scan.go's first-run prompt does. Per
-		//roadmap-v2's "asked on first run OR first feedback action"
-		//language, a feedback action IS the first-run moment here - opting
-		//in is implied by clicking Agree/Disagree at all, since there is no
-		//other way to ask on this surface
+		//A dashboard button click has no interactive terminal to prompt on the
+		//way cmd/deadkey/scan.go's first-run prompt does. A feedback action is
+		//the first-run moment here. Opting in is implied by clicking
+		//Agree/Disagree at all, since there is no other way to ask on this
+		//surface
 		h.cfg.SetTelemetry(true)
 		_ = h.cfg.Save()
 
@@ -161,11 +157,11 @@ func (h *handlers) handleFeedback(w http.ResponseWriter, r *http.Request) {
 
 			//DiscoveryConfidence here is an approximation, not the original
 			//captured value: DiscoveryEvidence's own float Confidence (see
-			//models/evidence.go) was never persisted to storage - only
+			//models/evidence.go) was never persisted to storage; only
 			//Credential.DiscoveryConfidence's coarser string enum was (see
-			//assessments.go). Mapped to the same two-point scale already
-			//used as a stand-in elsewhere in this project (internal/risk's
-			//own stated simplification): exact/manual discovery -> 1.0,
+			//assessments.go). Mapped to the same two-point scale already used
+			//as a stand-in elsewhere in this project (internal/risk's own
+			//stated simplification): exact/manual discovery -> 1.0,
 			//pattern-matched -> 0.6. A real fix would mean persisting
 			//DiscoveryEvidence.Confidence itself in a future schema version
 			DiscoveryMethod:     row.DiscoveryConfidence,
@@ -185,7 +181,7 @@ func (h *handlers) handleFeedback(w http.ResponseWriter, r *http.Request) {
 		payload.AgeBucket = ageBucket(row.FirstSeenAt)
 
 		//Errors are intentionally not surfaced to the person clicking the
-		//button - see this handler's doc comment
+		//button. See this handler's doc comment
 		_ = telemetry.SendFeedback(r.Context(), payload)
 
 	}
@@ -247,11 +243,11 @@ func (h *handlers) applyIgnoreChange(w http.ResponseWriter, r *http.Request, ign
 
 }
 
-//renderRow re-fetches and re-renders a single row, used after any action
-//that changes that row's own state (vote, ignore, unignore). Refetching
-//rather than mutating an in-memory copy keeps this handler simple and
-//guarantees the rendered row always reflects exactly what storage now says,
-//not what the handler assumed it changed
+//renderRow re-fetches and re-renders a single row, used after any action that
+//changes that row's own state (vote, ignore, unignore). Refetching rather than
+//mutating an in-memory copy keeps this handler simple and guarantees the
+//rendered row always reflects exactly what storage now says, not what the
+//handler assumed it changed
 func (h *handlers) renderRow(w http.ResponseWriter, r *http.Request, scanID, credentialID int64) {
 
 	row, ok, err := storage.GetAssessment(h.db, scanID, credentialID)
@@ -277,8 +273,8 @@ func (h *handlers) renderRow(w http.ResponseWriter, r *http.Request, scanID, cre
 }
 
 //loadView is the shared data-fetching step behind both the full page
-//(handleScan) and the row-fragment (handleRows) routes, so the two can
-//never drift out of sync on what "the current view" actually means
+//(handleScan) and the row-fragment (handleRows) routes, so the two can never
+//drift out of sync on what "the current view" actually means
 func (h *handlers) loadView(r *http.Request) (ViewData, bool, error) {
 
 	scanID, ok := resolveScanID(h.db, r)
@@ -362,9 +358,9 @@ func resolveScanID(db *storage.DB, r *http.Request) (int64, bool) {
 }
 
 //parseCredentialAndScan reads {id} (the credential ID) from the path and
-//scan_id from the query string - every write route (feedback/ignore/
-//unignore) needs both: which credential to act on, and which scan's row to
-//re-render afterward
+//scan_id from the query string. Every write route (feedback/ignore/unignore)
+//needs both: which credential to act on, and which scan's row to re-render
+//afterward
 func parseCredentialAndScan(r *http.Request) (credentialID, scanID int64, ok bool) {
 
 	credentialID, err1 := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -385,9 +381,9 @@ func modifierCodes(modifiers []models.RiskModifier) []string {
 
 }
 
-//approximateConfidence maps Credential.DiscoveryConfidence's string enum to
-//a float, since the original DiscoveryEvidence.Confidence value it stands
-//in for was never persisted. See handleFeedback's doc comment
+//approximateConfidence maps Credential.DiscoveryConfidence's string enum to a
+//float, since the original DiscoveryEvidence.Confidence value it stands in for
+//was never persisted. See handleFeedback's doc comment
 func approximateConfidence(discoveryConfidence string) float64 {
 
 	if discoveryConfidence == "pattern_matched" {

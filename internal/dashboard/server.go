@@ -1,6 +1,6 @@
 //Package dashboard is deadkey's local web dashboard: `deadkey serve`. A
-//server-rendered, single-binary web UI (html/template + embedded assets,
-//no separate frontend build) reading from the same SQLite database
+//server-rendered, single-binary web UI (html/template + embedded assets, no
+//separate frontend build) reading from the same SQLite database
 //internal/storage/scan.go writes to. See assets.go for why everything is
 //embedded rather than loaded at runtime or from a CDN
 package dashboard
@@ -16,21 +16,20 @@ import (
 )
 
 //NewHandler builds the complete dashboard http.Handler: every route, the
-//embedded static asset server, and CSRF/DNS-rebinding protection wrapping
-//the whole thing
+//embedded static asset server, and CSRF/DNS-rebinding protection wrapping the
+//whole thing
 //
 //http.CrossOriginProtection (added to the Go standard library in Go 1.25)
-//rejects non-safe cross-origin browser requests using the Sec-Fetch-Site
-//and Origin headers - specifically the protection a local server like this
-//needs against a malicious webpage open in another tab silently sending
-//requests to it. This matters more here than for a typical local dev
-//server: this dashboard has write routes (vote, ignore, unignore) that
-//change what a SECURITY tool reports, and a real, documented category of
-//attack (DNS rebinding against local servers) exists specifically for this
-//situation. GET/HEAD/OPTIONS requests are always allowed regardless -
-//correct, since every read route here is one of those methods and none of
-//them cause any state change (a hard rule this dashboard follows
-//throughout: nothing changes state on a GET)
+//rejects non-safe cross-origin browser requests using the Sec-Fetch-Site and
+//Origin headers; specifically the protection a local server like this needs
+//against a malicious webpage open in another tab silently sending requests to
+//it. This matters more here than for a typical local dev server: this dashboard
+//has write routes (vote, ignore, unignore) that change what a security tool
+//reports, and a real, documented category of attack (DNS rebinding against
+//local servers) exists specifically for this situation. GET/HEAD/OPTIONS
+//requests are always allowed regardless. Correct, since every read route here
+//is one of those methods and none of them cause any state change (a hard rule
+//this dashboard follows throughout: nothing changes state on a GET)
 func NewHandler(db *storage.DB, cfg *config.Config, host string) (http.Handler, error) {
 
 	h := &handlers{db: db, cfg: cfg, hostWarning: HostWarning(host)}
@@ -57,11 +56,11 @@ func NewHandler(db *storage.DB, cfg *config.Config, host string) (http.Handler, 
 }
 
 //HostWarning returns a non-empty message when host is anything other than a
-//loopback address - shown at the top of every page (see ViewData.HostWarning
-//and layout.html.tmpl). Binding this dashboard to a non-localhost address
-//means its write routes (ignore, vote) become reachable, and its read
-//routes readable, by anything else that can reach that address - worth
-//surfacing loudly rather than a silent difference from the (safe) default
+//loopback address, shown at the top of every page (see ViewData.HostWarning and
+//layout.html.tmpl). Binding this dashboard to a non-localhost address means its
+//write routes (ignore, vote) become reachable, and its read routes readable, by
+//anything else that can reach that address. This is worth surfacing loudly
+//rather than a silent difference from the (safe) default
 func HostWarning(host string) string {
 
 	if host == "127.0.0.1" || host == "localhost" || host == "::1" {

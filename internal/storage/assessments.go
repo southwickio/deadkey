@@ -15,10 +15,9 @@ import (
 type AssessmentRow struct {
 
 	//AssessmentID and CredentialID identify this specific row and its parent
-	//credential in storage. Needed by internal/dashboard so the vote/ignore/
-	//unignore actions can target a specific row - AssessmentRow itself is
-	//read-only reporting data everywhere else in this project (scan.go's
-	//table/JSON/CSV output never needed a stable ID to act on), but a
+	//credential in storage. Needed by internal/dashboard so the
+	//vote/ignore/ unignore actions can target a specific row. AssessmentRow
+	//itself is read-only reporting data everywhere else in this project, but a
 	//dashboard is exactly the situation where "which one do I click" becomes
 	//necessary
 	AssessmentID  int64
@@ -197,10 +196,10 @@ func ListForScan(db *DB, scanID int64) ([]AssessmentRow, error) {
 }
 //GetAssessment returns the single assessment row for credentialID within
 //scanID. Used by internal/dashboard's vote/ignore handlers, which need one
-//specific row's full detail (to build a models.FeedbackPayload, or to know
-//a credential's provider/location to ignore) rather than a whole scan's
-//worth of rows. Returns (AssessmentRow{}, false, nil) if no matching row
-//exists, mirroring storage.GetScan's not-found convention
+//specific row's full detail (to build a models.FeedbackPayload, or to know a
+//credential's provider/location to ignore) rather than a whole scan's worth of
+//rows. Returns (AssessmentRow{}, false, nil) if no matching row exists,
+//mirroring storage.GetScan's not-found convention
 func GetAssessment(db *DB, scanID, credentialID int64) (AssessmentRow, bool, error) {
 
 	rows, err := ListForScan(db, scanID)

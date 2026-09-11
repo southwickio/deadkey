@@ -296,8 +296,8 @@ func assessOne(ctx context.Context, db *storage.DB, p providers.Provider, cred m
 	default:
 
 		//Defensive: an unrecognized ValidationStatus (future addition this
-		//orchestrator hasn't been updated for). Never silently scored as if
-		//it were Valid
+		//orchestrator hasn't been updated for). Never silently scored as if it
+		//were Valid
 		assessment.Risk = models.RiskAssessment{Reasoning: fmt.Sprintf("unrecognized validation status %q", validation.Status)}
 
 	}

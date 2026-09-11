@@ -90,10 +90,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	}
 
-	//Listen explicitly, rather than letting ListenAndServe do it internally,
-	//so a "port already in use" failure can be reported clearly before the
-	//server ever starts, instead of surfacing as a raw net.OpError from
-	//inside ListenAndServe
+	//Listen explicitly, rather than letting ListenAndServe do it internally, so
+	//a "port already in use" failure can be reported clearly before the server
+	//ever starts, instead of surfacing as a raw net.OpError from inside
+	//ListenAndServe
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 
@@ -139,10 +139,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 }
 
-//openBrowser launches the OS's default browser at url. Best-effort: a
-//failure here (no display available, unusual environment, unrecognized OS)
-//is printed as a note, never fatal - --open is a convenience, not something
-//`serve` should refuse to run without
+//openBrowser launches the OS's default browser at url. Best-effort: a failure
+//here (no display available, unusual environment, unrecognized OS) is printed
+//as a note, never fatal - --open is a convenience, not something `serve` should
+//refuse to run without
 func openBrowser(url string) {
 
 	var cmd *exec.Cmd

@@ -89,11 +89,11 @@ func UpsertCredential(db *DB, cred models.Credential) (int64, error) {
 	return res.LastInsertId()
 
 }
-//GetCredential returns credentialID's provider and location - the two
-//fields storage.AddIgnore/RemoveIgnore actually key off of. Used by
-//internal/dashboard's ignore/unignore handlers, which only have a
-//credential ID to work from (from the rendered page), not the full
-//provider/location pair directly
+//GetCredential returns credentialID's provider and location. The two fields
+//storage.AddIgnore/RemoveIgnore actually key off of. Used by
+//internal/dashboard's ignore/unignore handlers, which only have a credential ID
+//to work from (from the rendered page), not the full provider/location pair
+//directly
 func GetCredential(db *DB, credentialID int64) (provider, location string, err error) {
 
 	err = db.QueryRow(
