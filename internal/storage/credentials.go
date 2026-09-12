@@ -89,7 +89,7 @@ func UpsertCredential(db *DB, cred models.Credential) (int64, error) {
 	return res.LastInsertId()
 
 }
-//GetCredential returns credentialID's provider and location. The two fields
+//GetCredential returns credentialID's provider and location; the two fields
 //storage.AddIgnore/RemoveIgnore actually key off of. Used by
 //internal/dashboard's ignore/unignore handlers, which only have a credential ID
 //to work from (from the rendered page), not the full provider/location pair
@@ -101,5 +101,60 @@ func GetCredential(db *DB, credentialID int64) (provider, location string, err e
 	).Scan(&provider, &location)
 
 	return provider, location, err
+
+}
+
+//OtherCredential is a manually-tracked "Other" entry; a credential type deadkey
+//has no real provider for at all. See cmd/deadkey/add.go: these get a
+//credentials row (so they're tracked, can be ignored/relisted) but deliberately
+//no assessment row ever. There is no real API behind them to check
+type OtherCredential struct {
+
+	ID          int64     `json:"id"`
+	Location    string    `json:"location"`
+	OtherName   string    `json:"other_name"`
+	FirstSeenAt time.Time `json:"first_seen_at"`
+
+}
+
+//ListOtherCredentials returns every credential registered under the special
+//"other" provider name. Used by cmd/deadkey/scan.go to show these in their own
+//distinct section, never mixed into the normal Dead/Rotate/Keep output
+func ListOtherCredentials(db *DB) ([]OtherCredential, error) {
+
+	rows, err := db.Query(
+		`SELECT id, location, identifier, first_seen_at FROM credentials WHERE provider = 'other' ORDER BY id`,
+	)
+	if err != nil {
+
+		return nil, err
+
+	}
+	defer rows.Close()
+
+	var out []OtherCredential
+	for rows.Next() {
+
+		var c OtherCredential
+		var firstSeenAt string
+		var otherName sql.NullString
+
+		if err := rows.Scan(&c.ID, &c.Location, &otherName, &firstSeenAt); err != nil {
+
+			return nil, err
+
+		}
+		c.OtherName = otherName.String
+		if t, err := time.Parse(time.RFC3339, firstSeenAt); err == nil {
+
+			c.FirstSeenAt = t
+
+		}
+
+		out = append(out, c)
+
+	}
+
+	return out, rows.Err()
 
 }

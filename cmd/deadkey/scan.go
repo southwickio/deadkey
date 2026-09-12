@@ -6,7 +6,8 @@ import (
 	"context"  //passed to every provider call
 	"fmt"  //printing prompts/summaries
 	"os"  //stdin/stdout, exit codes, file output
-	"strings"  //normalizing the telemetry prompt answer
+	"path/filepath"  //building the companion CSV filename
+	"strings"  //normalizing the telemetry prompt answer, building the companion filename
 	"time"  //stamping scan start/end
 
 	"github.com/spf13/cobra"
@@ -181,6 +182,13 @@ func runScan(cmd *cobra.Command, args []string) error {
 	}
 	rows = output.FilterByMinRisk(rows, scanMinRisk, scanShowIgnored)
 
+	otherCreds, err := storage.ListOtherCredentials(db)
+	if err != nil {
+
+		return err
+
+	}
+
 	report := output.Report{
 
 		ScanID:           scanID,
@@ -189,6 +197,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 		ProvidersChecked: requestedNames,
 		ProvidersFailed:  providerFailures,
 		Results:          rows,
+		OtherCredentials: otherCreds,
 
 	}
 
@@ -381,7 +390,12 @@ func writeReport(r output.Report) error {
 		}
 		if scanCSV {
 
-			return output.RenderCSV(f, r)
+			if err := output.RenderCSV(f, r); err != nil {
+
+				return err
+
+			}
+			return writeOtherCSVCompanion(r)
 
 		}
 		//A table doesn't make sense written to a file the way JSON/CSV do.
@@ -397,11 +411,50 @@ func writeReport(r output.Report) error {
 	}
 	if scanCSV {
 
+		if len(r.OtherCredentials) > 0 {
+
+			fmt.Fprintf(os.Stderr, "Note: %d manually tracked (\"Other\") entries exist but aren't included in CSV written to stdout - use --output to also get a separate companion CSV for them.\n", len(r.OtherCredentials))
+
+		}
 		return output.RenderCSV(w, r)
 
 	}
 
 	output.RenderTable(r)
+	return nil
+
+}
+
+//writeOtherCSVCompanion writes r.OtherCredentials to a second file alongside
+//the main --output CSV, named by inserting "-other" before the file extension
+//(for example: "scan.csv" -> "scan-other.csv"). Only written when there's
+//actually something to put in it
+func writeOtherCSVCompanion(r output.Report) error {
+
+	if len(r.OtherCredentials) == 0 {
+
+		return nil
+
+	}
+
+	ext := filepath.Ext(scanOutput)
+	companionPath := strings.TrimSuffix(scanOutput, ext) + "-other" + ext
+
+	f, err := os.Create(companionPath)
+	if err != nil {
+
+		return fmt.Errorf("scan: writing companion file for manually tracked entries: %w", err)
+
+	}
+	defer f.Close()
+
+	if err := output.RenderOtherCSV(f, r); err != nil {
+
+		return err
+
+	}
+
+	fmt.Printf("Manually tracked (\"Other\") entries written to %s\n", companionPath)
 	return nil
 
 }

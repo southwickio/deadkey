@@ -108,3 +108,44 @@ func Filter(wanted []string) ([]providers.Provider, error) {
 	return out, nil
 
 }
+
+//ManualEntryProviderByName returns the named provider's ManualEntryProvider
+//implementation, if it has one. Every provider currently registered implements
+//it (see each provider's manual.go), but this is written as a type assertion
+//rather than assumed, so a future provider added without manual-entry support
+//fails with a clear message from `deadkey add` instead of a panic
+func ManualEntryProviderByName(name string) (providers.ManualEntryProvider, bool) {
+
+	for _, p := range All() {
+
+		if p.Name() != name {
+
+			continue
+
+		}
+		mep, ok := p.(providers.ManualEntryProvider)
+		return mep, ok
+
+	}
+
+	return nil, false
+
+}
+
+//ByName returns the named provider itself (for the live-check step after manual
+//entry, which needs the full Provider, not just the ManualEntryProvider subset)
+func ByName(name string) (providers.Provider, bool) {
+
+	for _, p := range All() {
+
+		if p.Name() == name {
+
+			return p, true
+
+		}
+
+	}
+
+	return nil, false
+
+}

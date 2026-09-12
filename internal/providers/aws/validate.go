@@ -48,6 +48,17 @@ func (p *Provider) Validate(ctx context.Context,
 
 	}
 
+	return validateWithClient(ctx, client)
+
+}
+
+//validateWithClient runs the actual sts:GetCallerIdentity check and classifies
+//the result. Shared by Validate (the discovered-credential path) and
+//manual.go's ValidateManual. Both authenticate differently (stsClientFor vs.
+//stsClientForValues) but the call itself and how its result is interpreted are
+//identical, so that logic lives once
+func validateWithClient(ctx context.Context, client *sts.Client) (models.ValidationResult, error) {
+
 	_, callErr := client.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 	checkedAt := time.Now()
 
@@ -133,6 +144,19 @@ func stsClientFor(ctx context.Context,
 
 	}
 
+	return stsClientForValues(ctx, accessKeyID, secretKey)
+
+}
+
+//stsClientForValues builds an STS client from a raw access key ID/secret pair
+//directly, with no Credential/Metadata involved at all. This is what lets
+//manual.go's ValidateManual perform a real, live validation using values still
+//sitting in cmd/deadkey/add.go's local memory, without ever needing to place
+//the secret in Metadata first (even transiently). Per this project's
+//cornerstone rule, that distinction matters regardless of whether today's
+//storage layer happens to persist Metadata. The rule exists so that fact is
+//never load-bearing
+func stsClientForValues(ctx context.Context, accessKeyID, secretKey string) (*sts.Client, error) {
 	cfg, err := awsconfig.LoadDefaultConfig(ctx,
 		awsconfig.WithCredentialsProvider(
 			credentials.NewStaticCredentialsProvider(accessKeyID, secretKey, ""),

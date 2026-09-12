@@ -91,4 +91,17 @@ func RenderTable(r Report) {
 
 	}
 
+	if len(r.OtherCredentials) > 0 {
+
+		fmt.Printf("MANUALLY TRACKED (not scanned - no real API exists to check these) (%d)\n", len(r.OtherCredentials))
+		w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		for _, o := range r.OtherCredentials {
+
+			fmt.Fprintf(w, "  %s\t%s\n", o.OtherName, o.Location)
+
+		}
+		w.Flush()
+
+	}
+
 }

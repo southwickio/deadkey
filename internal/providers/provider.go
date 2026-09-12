@@ -88,3 +88,77 @@ type RiskModifierProvider interface {
 	) ([]models.RiskModifier, error)
 
 }
+
+//ManualField describes one piece of input `deadkey add` needs to collect
+//interactively for a given credential shape. Key is used as the map key when
+//the collected values are handed to BuildCredential; Label is shown to the
+//person; Secret controls whether the input is masked (see cmd/deadkey/add.go's
+//readSecret, built to avoid echoing credential values to the terminal or
+//leaving it in a broken state if the person hits Ctrl+C mid-entry)
+type ManualField struct {
+
+	Key    string
+	Label  string
+	Secret bool
+
+}
+
+//ManualFieldSet is one selectable "shape" of manual entry for a provider. Most
+//providers have exactly one (for example: GitHub has a single token). Providers
+//whose credential comes in more than one real shape (such as: Twilio's Account
+//SID+Auth Token vs. an API Key, SendGrid's API key vs. legacy
+//username/password, or Stripe's five distinct subtypes), declare one
+//ManualFieldSet per shape, and `deadkey add` presents them as a sub-choice
+//after the provider itself is picked
+type ManualFieldSet struct {
+
+	Subtype models.CredentialSubtype
+	Label   string
+	Fields  []ManualField
+
+}
+
+//ManualEntryProvider is an optional extension interface, implemented by any
+//provider that supports `deadkey add` registering one of its credentials by
+//hand rather than through Discover(). Kept optional, not folded into Provider
+//itself, so a future provider can exist (discoverable and scannable) without
+//also being required to support manual entry on day one
+//
+//Deliberately scoped the same way RiskModifierProvider is: a provider
+//implements this once, independently of how many other providers exist
+type ManualEntryProvider interface {
+
+	//ManualFieldSets returns every credential shape this provider supports
+	//registering manually, in the order they should be presented
+	ManualFieldSets() []ManualFieldSet
+
+	//BuildCredential turns the values collected for one ManualFieldSet (keyed
+	//by each ManualField's Key) into a real models.Credential. Implementations
+	//should validate field shape here (for example: an AWS access key ID's
+	//expected prefix/length) and return an error for anything obviously
+	//malformed, rather than waiting to discover it on a live API call. subtype
+	//identifies which ManualFieldSet the values came from, for providers with
+	//more than one
+	//
+	//BuildCredential's returned Credential never carries the secret, in
+	//Metadata or anywhere else; same cornerstone rule as every discovered
+	//credential. See ValidateManual for how the freshly-entered secret gets
+	//checked at all, given that constraint
+	BuildCredential(subtype models.CredentialSubtype, values map[string]string) (models.Credential, error)
+
+	//ValidateManual performs one immediate, live check using values directly.
+	//The same raw map `deadkey add` just collected, still sitting in its
+	//caller's local memory, never touching a Credential or its Metadata. This
+	//is what lets `deadkey add` validate a manually-entered credential once, at
+	//entry time, without ever placing the secret anywhere Discover-based
+	//Validate's Metadata-driven resolution would normally look for it
+	//
+	//A manually-added credential has no file or env var for a future `deadkey
+	//scan` to re-read the secret from later. So, unlike a discovered
+	//credential, it can only ever be validated at add-time, once, and again
+	//only by re-running `deadkey add` by hand. This is not an oversight. It is
+	//the direct, unavoidable consequence of this project's cornerstone rule
+	//that a secret is never persisted anywhere, including Metadata
+	ValidateManual(ctx context.Context, subtype models.CredentialSubtype, values map[string]string) (models.ValidationResult, error)
+
+}

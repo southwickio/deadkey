@@ -1,5 +1,5 @@
-//Package output renders scan results in each of deadkey's supported formats: a
-//human-readable table (default), JSON, and CSV. Shares one Report type so all
+//Package output renders scan results in each of deadkey's supported formats:
+//a human-readable table (default), JSON, and CSV. Shares one Report type so all
 //three formats always describe the exact same data
 package output
 
@@ -23,13 +23,21 @@ type Report struct {
 	ProvidersFailed   []models.ProviderFailure `json:"providers_failed"`
 	Results           []storage.AssessmentRow `json:"results"`
 
+	//OtherCredentials lists manually-tracked "Other" entries (see
+	//cmd/deadkey/add.go). Deliberately never scored, since there is no real API
+	//behind them to check. Shown in their own section in table and JSON output.
+	//For --csv, these are written to a SEPARATE companion file (see
+	//cmd/deadkey/writeReport and output.RenderOtherCSV) rather than appended to
+	//the main CSV, since the two row shapes share no columns
+	OtherCredentials []storage.OtherCredential `json:"other_credentials,omitempty"`
+
 }
 
 //riskTierFilter maps a --min-risk flag value to the set of tiers at or above
 //it. Order here reflects severity, most to least urgent (RiskAccountInactive is
-//deliberately its own case and always shown regardless of --min-risk, since
+//deliberately its own case, always shown regardless of --min-risk, since
 //suppressing an account-inactive finding behind a risk filter would misread it
-//as a normal; lower-priority finding rather than the distinct condition it is)
+//as a normal, lower-priority finding rather than the distinct condition it is)
 var riskTierSeverity = map[string]int{
 
 	"dead":   3,

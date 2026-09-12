@@ -9,10 +9,10 @@ import (
 //IgnoreEntry is one row from the ignore list
 type IgnoreEntry struct {
 
-	Provider  string
-	Location  string
-	Reason    string
-	CreatedAt time.Time
+	Provider  string    `json:"provider"`
+	Location  string    `json:"location"`
+	Reason    string    `json:"reason"`
+	CreatedAt time.Time `json:"created_at"`
 
 }
 
