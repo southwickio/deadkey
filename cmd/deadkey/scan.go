@@ -89,6 +89,21 @@ func runScan(cmd *cobra.Command, args []string) error {
 
 	}
 
+	//Fall back to persisted defaults (see `deadkey config defaults`) only for
+	//whichever flag the person didn't actually pass this run. An explicit
+	//--provider/--path on the command line always wins over a stored default,
+	//never the reverse
+	if !cmd.Flags().Changed("provider") && len(cfg.Defaults.Providers) > 0 {
+
+		scanProviders = cfg.Defaults.Providers
+
+	}
+	if !cmd.Flags().Changed("path") && len(cfg.Defaults.Paths) > 0 {
+
+		scanPaths = cfg.Defaults.Paths
+
+	}
+
 	handleTelemetryFirstRun(cfg)
 
 	db, err := storage.Open(resolvedConfigDir)

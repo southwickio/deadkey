@@ -229,3 +229,17 @@ func newInstallID() string {
 	return hex.EncodeToString(b)
 
 }
+
+//Reset deletes config.json from dir entirely. Telemetry opt-in state, install
+//ID, and any persisted defaults all go with it. A missing file is not an error:
+//resetting something that was already unset is a no-op, not a failure
+func Reset(dir string) error {
+
+	if err := os.Remove(configPath(dir)); err != nil && !os.IsNotExist(err) {
+
+		return fmt.Errorf("config: removing %s: %w", configPath(dir), err)
+
+	}
+	return nil
+
+}
